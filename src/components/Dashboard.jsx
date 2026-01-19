@@ -95,8 +95,8 @@ export default function Dashboard() {
     const fetchCharts = async () => {
       try {
         const [historyRes, trendsRes] = await Promise.all([
-          fetch(`${import.meta.env.VITE_API_BASE}/api/history`),
-          fetch(`${import.meta.env.VITE_API_BASE}/api/trends`),
+          fetch("https://farm-dv9a.onrender.com/api/history"),
+          fetch("https://farm-dv9a.onrender.com/api/trends"),
         ]);
 
         const historyData = await historyRes.json();
