@@ -101,7 +101,7 @@ export default function Dashboard() {
 
         const historyData = await historyRes.json();
         const trendsData = await trendsRes.json();
-        console.log(historyData);
+        // console.log(historyData);
 
         setHistory24h(historyData);
         setTrends24h(trendsData);
