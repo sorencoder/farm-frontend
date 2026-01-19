@@ -31,7 +31,7 @@ import {
 let socket;
 const getSocket = () => {
   if (!socket) {
-    socket = io(import.meta.env.VITE_SOCKET_URL, {
+    socket = io("https://farm-dv9a.onrender.com", {
       transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: Infinity,
