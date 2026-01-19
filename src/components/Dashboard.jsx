@@ -4,6 +4,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
+import "dotenv/config";
 import {
   Droplets,
   Thermometer,
@@ -26,13 +27,12 @@ import {
 } from "recharts";
 
 /* ================= CONFIG ================= */
-const SOCKET_URL = "http://localhost:5000";
 
 /* ================= SOCKET SINGLETON ================= */
 let socket;
 const getSocket = () => {
   if (!socket) {
-    socket = io(SOCKET_URL, {
+    socket = io(import.meta.env.VITE_SOCKET_URL, {
       transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -96,8 +96,8 @@ export default function Dashboard() {
     const fetchCharts = async () => {
       try {
         const [historyRes, trendsRes] = await Promise.all([
-          fetch("http://localhost:5000/api/history?limit=144"),
-          fetch("http://localhost:5000/api/trends"),
+          fetch(`${import.meta.env.VITE_API_BASE}/api/history`),
+          fetch(`${import.meta.env.VITE_API_BASE}/api/trends`),
         ]);
 
         const historyData = await historyRes.json();
