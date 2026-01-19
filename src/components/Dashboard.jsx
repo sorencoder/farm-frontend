@@ -219,12 +219,15 @@ export default function Dashboard() {
         </section>
         <section>
           <Card icon={<Wind />} title="Environment · Last 24h">
-            <div className="h-64 w-full">
+            <div
+              style={{ height: "260px", width: "100%" }}
+              className="transition-opacity duration-300"
+            >
               {loadingCharts ? (
                 <div className="h-full flex items-center justify-center text-slate-400 text-sm">
                   Loading…
                 </div>
-              ) : (
+              ) : trends24h.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trends24h}>
                     <Tooltip
@@ -257,14 +260,25 @@ export default function Dashboard() {
                     />
                   </LineChart>
                 </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                  No data…
+                </div>
               )}
             </div>
           </Card>
         </section>
         <section>
           <Card icon={<Droplets />} title="Soil Moisture · Last 24h">
-            <div className="h-64 w-full">
-              {trends24h.length > 0 ? (
+            <div
+              style={{ height: "260px", width: "100%" }}
+              className="transition-opacity duration-300"
+            >
+              {loadingCharts ? (
+                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                  Loading…
+                </div>
+              ) : history24h.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={history24h}>
                     <Tooltip
