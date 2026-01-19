@@ -1,6 +1,6 @@
-// NOTE: This file is production-ready and mobile-first.
-// It connects to your existing Socket.IO backend (farm_update event)
-// TailwindCSS required
+// NOTE: Production-ready, mobile-first dashboard
+// Backend-compatible with final Node/MQTT/Mongo architecture
+// TailwindCSS + Recharts required
 
 import React, { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
@@ -12,8 +12,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
-  Activity,
   Tractor,
+  CloudHail,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -22,17 +22,17 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  CartesianGrid,
 } from "recharts";
 
 /* ================= CONFIG ================= */
+const BACKEND_URL = "http://localhost:5000";
 
 /* ================= SOCKET SINGLETON ================= */
 let socket;
 const getSocket = () => {
   if (!socket) {
-    socket = io("https://farm-dv9a.onrender.com", {
-      transports: ["websocket"],
+    socket = io(BACKEND_URL, {
+      transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -46,79 +46,80 @@ const getSocket = () => {
 export default function Dashboard() {
   const [connected, setConnected] = useState(false);
   const [telemetry, setTelemetry] = useState({
-    s_raw: 0,
-    s_pct: 0,
-    s_temp: null,
-    a_temp: null,
-    hum: null,
-    pump: 0,
-    man: 0,
-    life: 0,
+    soil_raw: 0,
+    soil_pct: 0,
+    soil_temp: null,
+    air_temp: null,
+    humidity: null,
+    pump_on: false,
+    manual: false,
+    pump_life: 0,
     ts: null,
   });
-  const [history24h, setHistory24h] = useState([]);
-  const [trends24h, setTrends24h] = useState([]);
+
+  const [miniHistory, setMiniHistory] = useState([]);
+  const [charts24h, setCharts24h] = useState([]);
   const [loadingCharts, setLoadingCharts] = useState(true);
+  // "air_temp" | "humidity" | "soil_pct" | null
 
-  const [history, setHistory] = useState([]);
-
-  /* ================= SOCKET HANDLING ================= */
+  /* ================= SOCKET ================= */
   useEffect(() => {
     const s = getSocket();
 
-    s.on("connect", () => setConnected(true));
-    s.on("disconnect", () => setConnected(false));
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
 
-    s.on("telemetry:init", (payload) => {
-      setTelemetry({ ...payload, ts: Date.now() });
-    });
+    const onTelemetry = (payload) => {
+      console.log("📡 TELEMETRY RECEIVED", payload);
 
-    +s.on("telemetry:update", (payload) => {
       setTelemetry({
         ...payload,
-        ts: Date.now(),
+        ts: Date.now(), // local receive time (optional)
       });
 
-      setHistory((prev) => {
-        const next = [...prev, payload.s_pct || 0];
-        return next.slice(-24);
-      });
-    });
+      setMiniHistory((prev) => [...prev, payload.soil_pct ?? 0].slice(-24));
+    };
+
+    s.on("connect", onConnect);
+    s.on("disconnect", onDisconnect);
+    s.on("telemetry:init", onTelemetry);
+    s.on("telemetry:update", onTelemetry);
 
     return () => {
-      s.off("telemetry:init");
-      s.off("telemetry:update");
+      s.off("connect", onConnect);
+      s.off("disconnect", onDisconnect);
+      s.off("telemetry:init", onTelemetry);
+      s.off("telemetry:update", onTelemetry);
     };
   }, []);
 
+  /* ================= CHART DATA ================= */
   useEffect(() => {
-    const fetchCharts = async () => {
+    const loadCharts = async () => {
       try {
-        const [historyRes, trendsRes] = await Promise.all([
-          fetch("https://farm-dv9a.onrender.com/api/history"),
-          fetch("https://farm-dv9a.onrender.com/api/trends"),
-        ]);
+        const res = await fetch(`${BACKEND_URL}/api/charts/24h`);
+        const data = await res.json();
 
-        const historyData = await historyRes.json();
-        const trendsData = await trendsRes.json();
-        // console.log(historyData);
-
-        setHistory24h(historyData);
-        setTrends24h(trendsData);
-      } catch (err) {
-        console.error("Chart fetch failed", err);
+        setCharts24h(
+          data.map((d) => ({
+            ...d,
+            ts: new Date(d.timestamp).getTime(),
+          })),
+        );
+      } catch (e) {
+        console.error("Chart fetch failed", e);
       } finally {
         setLoadingCharts(false);
       }
     };
 
-    fetchCharts();
+    loadCharts();
   }, []);
 
-  /* ================= DERIVED UI STATE ================= */
-  const pumpLabel = telemetry.pump
+  /* ================= DERIVED STATE ================= */
+  const pumpLabel = telemetry.pump_on
     ? "ON"
-    : telemetry.man
+    : telemetry.manual
       ? "FORCED OFF"
       : "OFF";
 
@@ -134,8 +135,8 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* HEADER */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200 px-4 py-3">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b px-4 py-3">
+        <div className="flex items-center justify-between gap-3 max-w-7xl mx-auto">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-emerald-600 rounded-xl">
               <Tractor className="text-white" size={18} />
@@ -144,7 +145,9 @@ export default function Dashboard() {
               <h1 className="font-bold leading-none">AgriSmart</h1>
               <div className="flex items-center gap-1 mt-0.5">
                 <span
-                  className={`w-2 h-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`}
+                  className={`w-2 h-2 rounded-full ${
+                    connected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"
+                  }`}
                 />
                 <span className="text-[10px] uppercase text-slate-400 font-bold">
                   {connected ? "Live" : "Offline"}
@@ -165,39 +168,41 @@ export default function Dashboard() {
       </header>
 
       {/* CONTENT */}
-      <main className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* SOIL MOISTURE */}
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 grid gap-4">
+        {/* CARDS */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card icon={<Droplets />} title="Soil Moisture">
             <div className="flex justify-between items-end">
               <div className="text-5xl font-black">
-                {telemetry.s_pct}
+                {telemetry.soil_pct}
                 <span className="text-xl">%</span>
               </div>
               <div className="text-xs text-slate-400 font-mono">
-                RAW {telemetry.s_raw}
+                RAW {telemetry.soil_raw}
               </div>
             </div>
-            <MiniBarGraph values={history} />
+            <MiniBarGraph values={miniHistory} />
           </Card>
 
-          {/* ENVIRONMENT */}
           <Card icon={<Thermometer />} title="Environment">
-            <Stat label="Air Temp" value={`${telemetry.a_temp ?? "--"} °C`} />
-            <Stat label="Humidity" value={`${telemetry.hum ?? "--"} %`} />
-            <Stat label="Soil Temp" value={`${telemetry.s_temp ?? "--"} °C`} />
+            <Stat
+              label="Air Temperature"
+              value={`${telemetry.air_temp ?? "--"} °C`}
+            />
+            <Stat label="Humidity" value={`${telemetry.humidity ?? "--"} %`} />
+            <Stat
+              label="Soil Temperature"
+              value={`${telemetry.soil_temp ?? "--"} °C`}
+            />
           </Card>
 
-          {/* PUMP */}
           <Card icon={<Power />} title="Irrigation Pump">
             <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div>
-                  <p className="font-bold">Relay Controlled</p>
-                  <p className="text-xs text-slate-400">
-                    Mode: {telemetry.man ? "Manual" : "Auto"}
-                  </p>
-                </div>
+              <div>
+                <p className="font-bold">Relay Controlled</p>
+                <p className="text-xs text-slate-400">
+                  Mode: {telemetry.manual ? "Manual" : "Auto"}
+                </p>
               </div>
 
               <div
@@ -213,103 +218,130 @@ export default function Dashboard() {
             </div>
 
             <div className="text-xs text-slate-500">
-              Lifetime: {telemetry.life} min
+              Lifetime: {telemetry.pump_life} min
             </div>
           </Card>
         </section>
-        <section>
-          <Card icon={<Wind />} title="Environment · Last 24h">
-            <div
-              style={{ height: "260px", width: "100%" }}
-              className="transition-opacity duration-300"
-            >
-              {loadingCharts ? (
-                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                  Loading…
-                </div>
-              ) : trends24h.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trends24h}>
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: "12px",
-                        border: "1px solid #e5e7eb",
-                        fontSize: "12px",
-                      }}
-                      labelFormatter={(t) => new Date(t).toLocaleString()}
-                    />
 
-                    <Line
-                      type="monotone"
-                      dataKey="air_temp"
-                      name="Air Temperature (°C)"
-                      stroke="#f97316"
-                      strokeWidth={2}
-                      dot={false}
-                      isAnimationActive={true}
-                    />
+        {/* CHART */}
+        <Card icon={<Droplets />} title="Soil Moisture · Last 24h">
+          <div className="h-56 sm:h-64 lg:h-72">
+            {loadingCharts ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                Loading…
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={charts24h}>
+                  <XAxis
+                    dataKey="ts"
+                    type="number"
+                    scale="time"
+                    domain={["auto", "auto"]}
+                    hide
+                  />
 
-                    <Line
-                      type="monotone"
-                      dataKey="humidity"
-                      name="Humidity"
-                      stroke="#0ea5e9"
-                      strokeWidth={2}
-                      dot={false}
-                      isAnimationActive={true}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                  No data…
-                </div>
-              )}
-            </div>
-          </Card>
-        </section>
-        <section>
-          <Card icon={<Droplets />} title="Soil Moisture · Last 24h">
-            <div
-              style={{ height: "260px", width: "100%" }}
-              className="transition-opacity duration-300"
-            >
-              {loadingCharts ? (
-                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                  Loading…
-                </div>
-              ) : history24h.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={history24h}>
-                    <Tooltip
-                      contentStyle={{
-                        borderRadius: "12px",
-                        border: "1px solid #e5e7eb",
-                        fontSize: "12px",
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="soil_pct"
-                      name="Soil Moisture (%)"
-                      stroke="#2563eb"
-                      strokeWidth={2.5}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                  No data…
-                </div>
-              )}
-            </div>
-          </Card>
-        </section>
+                  <YAxis hide />
+                  <Tooltip
+                    labelFormatter={(ts) =>
+                      new Date(ts).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    }
+                  />
+
+                  <Line
+                    dataKey="soil_pct"
+                    name="Soil Moisture"
+                    stroke="#22c55e"
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </Card>
+        <Card icon={<Thermometer />} title="Soil Temperature · Last 24h">
+          <div className="h-56 sm:h-64 lg:h-72">
+            {loadingCharts ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                Loading…
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={charts24h}>
+                  <XAxis
+                    dataKey="ts"
+                    type="number"
+                    scale="time"
+                    domain={["auto", "auto"]}
+                    hide
+                  />
+
+                  <YAxis hide />
+                  <Tooltip
+                    labelFormatter={(ts) =>
+                      new Date(ts).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    }
+                  />
+
+                  <Line
+                    dataKey="soil_temp"
+                    name="Soil Temperature"
+                    stroke="#f97316"
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </Card>
+        <Card icon={<CloudHail />} title="Humidity · Last 24h">
+          <div className="h-56 sm:h-64 lg:h-72">
+            {loadingCharts ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                Loading…
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={charts24h}>
+                  <XAxis
+                    dataKey="ts"
+                    type="number"
+                    scale="time"
+                    domain={["auto", "auto"]}
+                    hide
+                  />
+
+                  <YAxis hide />
+                  <Tooltip
+                    labelFormatter={(ts) =>
+                      new Date(ts).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    }
+                  />
+
+                  <Line
+                    dataKey="humidity"
+                    name="Humidity"
+                    stroke="#0ea5e9"
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </Card>
       </main>
 
       <footer className="text-center text-[10px] text-slate-400 py-6">
-        SmartFarm IoT · Node‑01
+        SmartFarm IoT · Node-01
       </footer>
     </div>
   );
@@ -339,12 +371,12 @@ function Stat({ label, value }) {
 
 function MiniBarGraph({ values }) {
   return (
-    <div className="flex items-end gap-1 h-10">
+    <div className="flex items-end gap-1 h-8 sm:h-10">
       {values.map((v, i) => (
         <div
           key={i}
-          className="bg-blue-400/40 flex-1 rounded"
-          style={{ height: `${Math.max(v, 8)}%` }}
+          className="bg-emerald-400/40 flex-1 rounded"
+          style={{ height: `${Math.max(v, 6)}%` }}
         />
       ))}
     </div>
